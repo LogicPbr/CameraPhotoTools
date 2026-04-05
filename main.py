@@ -123,7 +123,7 @@ class App(ttk.Window):
             )
         elif f == "orphan_raw":
             self.hint_var.set(
-                "提示：上方为 JPG 参考目录，下方为待扫描的 RAW 根目录；若未填写 JPG 目录，将默认与 RAW 目录相同。\n"
+                "提示：上方为 JPG 参考目录，下方为待扫描的 RAW 根目录；若未填写 RAW 目录，将默认与 JPG 目录相同。\n"
                 "配对规则：在每一级子目录内，若某 RAW 的基名与并行 JPG 目录下对应子文件夹内\n"
                 "任一 JPG/JPEG 的基名相同（忽略大小写），则保留；否则视为可删除的孤立 RAW。\n"
                 "删除的文件将移入回收站。"
@@ -335,7 +335,27 @@ class App(ttk.Window):
         frm.rowconfigure(3, weight=1)
 
     def _resolved_roots(self) -> tuple[Path, Path] | None:
+        feat = self.feature_var.get()
         raw_s = self.raw_dir_var.get().strip()
+        jpg_s = self.jpg_dir_var.get().strip()
+
+        if feat == "orphan_raw":
+            if not jpg_s:
+                messagebox.showwarning("缺少目录", "请先填写 JPG 所在目录。")
+                return None
+            jpg_path = Path(jpg_s)
+            if not jpg_path.is_dir():
+                messagebox.showerror("路径无效", f"JPG 目录不存在或不是文件夹：\n{jpg_path}")
+                return None
+            if not raw_s:
+                raw_path = jpg_path
+            else:
+                raw_path = Path(raw_s)
+                if not raw_path.is_dir():
+                    messagebox.showerror("路径无效", f"RAW 目录不存在或不是文件夹：\n{raw_path}")
+                    return None
+            return raw_path, jpg_path
+
         if not raw_s:
             messagebox.showwarning("缺少目录", "请先填写 RAW 所在目录。")
             return None
@@ -343,8 +363,6 @@ class App(ttk.Window):
         if not raw_path.is_dir():
             messagebox.showerror("路径无效", f"RAW 目录不存在或不是文件夹：\n{raw_path}")
             return None
-
-        jpg_s = self.jpg_dir_var.get().strip()
         if not jpg_s:
             jpg_path = raw_path
         else:
