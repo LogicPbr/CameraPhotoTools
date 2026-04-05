@@ -1,2 +1,4 @@
 pyinstaller>=6.0
 send2trash>=1.8.0
+ttkbootstrap>=1.10.0
+pillow>=10.0

@@ -3,12 +3,22 @@ Camera Photo Tools — Windows helper for post-import photo cleanup.
 """
 from __future__ import annotations
 
+import sys
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import HORIZONTAL, filedialog, messagebox
+
+import ttkbootstrap as ttk
+from ttkbootstrap.scrolled import ScrolledText
 
 from cleanup_orphan_jpg import delete_files, find_orphan_jpgs, find_orphan_raws
 from jpg_rename import apply_jpg_renames, plan_jpg_renames
+
+
+def _app_base_path() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent
 
 
 def browse_dir(var: tk.StringVar) -> None:
@@ -17,12 +27,16 @@ def browse_dir(var: tk.StringVar) -> None:
         var.set(path)
 
 
-class App(tk.Tk):
+class App(ttk.Window):
     def __init__(self) -> None:
-        super().__init__()
-        self.title("Camera Photo Tools")
-        self.minsize(680, 460)
-        self.geometry("820x540")
+        super().__init__(
+            title="Camera Photo Tools",
+            themename="morph",
+            minsize=(720, 520),
+            size=(900, 620),
+            iconphoto=None,
+        )
+        self._set_window_icon()
 
         self.raw_dir_var = tk.StringVar()
         self.jpg_dir_var = tk.StringVar()
@@ -46,6 +60,15 @@ class App(tk.Tk):
         self._update_hint()
         self._sync_feature_panels()
         self.feature_var.trace_add("write", self._on_feature_change)
+        self.place_window_center()
+
+    def _set_window_icon(self) -> None:
+        ico = _app_base_path() / "assets" / "CameraPhotoTools.ico"
+        if ico.is_file():
+            try:
+                self.iconbitmap(default=str(ico))
+            except tk.TclError:
+                pass
 
     def _on_feature_change(self, *_args: object) -> None:
         self._orphans = []
@@ -115,56 +138,82 @@ class App(tk.Tk):
 
     def _build_ui(self) -> None:
         pad = {"padx": 10, "pady": 6}
-        outer = ttk.Frame(self, padding=8)
+        outer = ttk.Frame(self, padding=(20, 16))
         outer.pack(fill=tk.BOTH, expand=True)
         outer.columnconfigure(1, weight=1)
-        outer.rowconfigure(0, weight=1)
+        outer.columnconfigure(0, minsize=220)
+        outer.rowconfigure(2, weight=1)
 
-        sidebar = ttk.LabelFrame(outer, text="功能", padding=10)
-        sidebar.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 8))
+        header = ttk.Frame(outer)
+        header.grid(row=0, column=0, columnspan=2, sticky=tk.EW, pady=(0, 4))
+        ttk.Label(
+            header,
+            text="Camera Photo Tools",
+            font=("Segoe UI Semibold", 20),
+            bootstyle="primary",
+        ).pack(anchor=tk.W)
+        ttk.Label(
+            header,
+            text="照片导入后清理 · RAW / JPG 配对 · 批量重命名",
+            font=("Segoe UI", 10),
+            bootstyle="secondary",
+        ).pack(anchor=tk.W, pady=(4, 0))
+
+        ttk.Separator(outer, orient=HORIZONTAL).grid(
+            row=1, column=0, columnspan=2, sticky=tk.EW, pady=(12, 14)
+        )
+
+        sidebar = ttk.Labelframe(outer, text="功能", padding=14, bootstyle="primary")
+        sidebar.grid(row=2, column=0, sticky=tk.NSEW, padx=(0, 4))
         ttk.Radiobutton(
             sidebar,
             text="删除无对应 RAW 的 JPG",
             variable=self.feature_var,
             value="orphan_jpg",
-        ).pack(anchor=tk.W, pady=(0, 8))
+            bootstyle="success-toolbutton",
+        ).pack(anchor=tk.W, pady=(0, 6), fill=tk.X)
         ttk.Label(
             sidebar,
             text="同目录（或并行树）下按文件基名与 RAW 配对",
-            wraplength=168,
+            wraplength=188,
             justify=tk.LEFT,
-            font=("", 8),
-        ).pack(anchor=tk.W, pady=(0, 12))
+            font=("Segoe UI", 8),
+            bootstyle="secondary",
+        ).pack(anchor=tk.W, pady=(0, 14))
         ttk.Radiobutton(
             sidebar,
             text="删除无对应 JPG 的 RAW",
             variable=self.feature_var,
             value="orphan_raw",
-        ).pack(anchor=tk.W, pady=(0, 8))
+            bootstyle="success-toolbutton",
+        ).pack(anchor=tk.W, pady=(0, 6), fill=tk.X)
         ttk.Label(
             sidebar,
             text="同目录（或并行树）下按文件基名与 JPG 配对",
-            wraplength=168,
+            wraplength=188,
             justify=tk.LEFT,
-            font=("", 8),
-        ).pack(anchor=tk.W, pady=(0, 12))
+            font=("Segoe UI", 8),
+            bootstyle="secondary",
+        ).pack(anchor=tk.W, pady=(0, 14))
         ttk.Radiobutton(
             sidebar,
             text="JPG 文件名查找替换",
             variable=self.feature_var,
             value="jpg_rename",
-        ).pack(anchor=tk.W, pady=(0, 8))
+            bootstyle="success-toolbutton",
+        ).pack(anchor=tk.W, pady=(0, 6), fill=tk.X)
         ttk.Label(
             sidebar,
             text="当前文件夹内 JPG 文件名正则替换（不递归）",
-            wraplength=168,
+            wraplength=188,
             justify=tk.LEFT,
-            font=("", 8),
+            font=("Segoe UI", 8),
+            bootstyle="secondary",
         ).pack(anchor=tk.W)
 
-        frm = ttk.Frame(outer, padding=(0, 4))
-        frm.grid(row=0, column=1, sticky=tk.NSEW)
-        frm.columnconfigure(0, weight=1)
+        frm = ttk.Labelframe(outer, text="工作区", padding=(16, 14), bootstyle="secondary")
+        frm.grid(row=2, column=1, sticky=tk.NSEW, padx=(8, 0))
+        frm.columnconfigure(1, weight=1)
 
         self.options_container = ttk.Frame(frm)
         self.options_container.grid(row=0, column=0, columnspan=2, sticky=tk.EW, **pad)
@@ -174,25 +223,27 @@ class App(tk.Tk):
         self._raw_pair_label = ttk.Label(self.pair_panel, text="RAW 所在目录")
         self._raw_pair_row = ttk.Frame(self.pair_panel)
         self._raw_pair_row.columnconfigure(0, weight=1)
-        ttk.Entry(self._raw_pair_row, textvariable=self.raw_dir_var, width=50).grid(
+        ttk.Entry(self._raw_pair_row, textvariable=self.raw_dir_var).grid(
             row=0, column=0, sticky=tk.EW, padx=(0, 8)
         )
         ttk.Button(
             self._raw_pair_row,
             text="浏览…",
             command=lambda: browse_dir(self.raw_dir_var),
+            bootstyle="secondary-outline",
         ).grid(row=0, column=1)
 
         self._jpg_pair_label = ttk.Label(self.pair_panel, text="JPG 所在目录")
         self._jpg_pair_row = ttk.Frame(self.pair_panel)
         self._jpg_pair_row.columnconfigure(0, weight=1)
-        ttk.Entry(self._jpg_pair_row, textvariable=self.jpg_dir_var, width=50).grid(
+        ttk.Entry(self._jpg_pair_row, textvariable=self.jpg_dir_var).grid(
             row=0, column=0, sticky=tk.EW, padx=(0, 8)
         )
         ttk.Button(
             self._jpg_pair_row,
             text="浏览…",
             command=lambda: browse_dir(self.jpg_dir_var),
+            bootstyle="secondary-outline",
         ).grid(row=0, column=1)
         self.pair_panel.columnconfigure(1, weight=1)
         self._sync_pair_row_order()
@@ -202,50 +253,84 @@ class App(tk.Tk):
         tgt_row = ttk.Frame(self.rename_panel)
         tgt_row.grid(row=0, column=1, sticky=tk.EW, **pad)
         tgt_row.columnconfigure(0, weight=1)
-        ttk.Entry(tgt_row, textvariable=self.rename_target_var, width=50).grid(
+        ttk.Entry(tgt_row, textvariable=self.rename_target_var).grid(
             row=0, column=0, sticky=tk.EW, padx=(0, 8)
         )
-        ttk.Button(tgt_row, text="浏览…", command=lambda: browse_dir(self.rename_target_var)).grid(
-            row=0, column=1
-        )
+        ttk.Button(
+            tgt_row,
+            text="浏览…",
+            command=lambda: browse_dir(self.rename_target_var),
+            bootstyle="secondary-outline",
+        ).grid(row=0, column=1)
 
         ttk.Label(self.rename_panel, text="查找词（正则）").grid(row=1, column=0, sticky=tk.NW, **pad)
-        ttk.Entry(self.rename_panel, textvariable=self.rename_find_var, width=52).grid(
+        ttk.Entry(self.rename_panel, textvariable=self.rename_find_var).grid(
             row=1, column=1, sticky=tk.EW, **pad
         )
 
         ttk.Label(self.rename_panel, text="替换为").grid(row=2, column=0, sticky=tk.NW, **pad)
-        ttk.Entry(self.rename_panel, textvariable=self.rename_replace_var, width=52).grid(
+        ttk.Entry(self.rename_panel, textvariable=self.rename_replace_var).grid(
             row=2, column=1, sticky=tk.EW, **pad
         )
         self.rename_panel.columnconfigure(1, weight=1)
 
-        hint_lbl = ttk.Label(frm, textvariable=self.hint_var, wraplength=520, justify=tk.LEFT)
+        hint_lbl = ttk.Label(
+            frm,
+            textvariable=self.hint_var,
+            wraplength=560,
+            justify=tk.LEFT,
+            bootstyle="secondary",
+        )
         hint_lbl.grid(row=1, column=0, columnspan=2, sticky=tk.W, **pad)
 
         btn_row = ttk.Frame(frm)
-        btn_row.grid(row=2, column=0, columnspan=2, sticky=tk.NW, **pad)
-        self.btn_preview = ttk.Button(btn_row, text="预览待删除列表", command=self._on_preview)
-        self.btn_preview.pack(side=tk.LEFT, padx=(0, 8))
-        self.btn_action = ttk.Button(btn_row, text="执行删除", command=self._on_action)
+        btn_row.grid(row=2, column=0, columnspan=2, sticky=tk.W, **pad)
+        self.btn_preview = ttk.Button(
+            btn_row,
+            text="预览待删除列表",
+            command=self._on_preview,
+            bootstyle="secondary-outline",
+            width=14,
+        )
+        self.btn_preview.pack(side=tk.LEFT, padx=(0, 10))
+        self.btn_action = ttk.Button(
+            btn_row,
+            text="执行删除",
+            command=self._on_action,
+            bootstyle="success",
+            width=12,
+        )
         self.btn_action.pack(side=tk.LEFT)
 
-        ttk.Label(frm, text="预览").grid(row=3, column=0, sticky=tk.NW, **pad)
+        ttk.Label(frm, text="输出 / 预览", bootstyle="primary").grid(
+            row=3, column=0, sticky=tk.NW, **pad
+        )
         self.list_frame = ttk.Frame(frm)
         self.list_frame.grid(row=3, column=1, rowspan=2, sticky=tk.NSEW, **pad)
         self.list_frame.columnconfigure(0, weight=1)
         self.list_frame.rowconfigure(0, weight=1)
 
-        scroll = ttk.Scrollbar(self.list_frame)
-        scroll.grid(row=0, column=1, sticky=tk.NS)
-        self.text = tk.Text(self.list_frame, height=14, wrap=tk.NONE, yscrollcommand=scroll.set)
+        self.text = ScrolledText(
+            self.list_frame,
+            height=15,
+            wrap=tk.NONE,
+            autohide=True,
+            bootstyle="round",
+            font=("Consolas", 10),
+        )
         self.text.grid(row=0, column=0, sticky=tk.NSEW)
-        scroll.config(command=self.text.yview)
+
+        ttk.Separator(frm, orient=HORIZONTAL).grid(
+            row=5, column=0, columnspan=2, sticky=tk.EW, pady=(8, 6)
+        )
 
         self.status_var = tk.StringVar(value="就绪")
-        ttk.Label(frm, textvariable=self.status_var).grid(
-            row=5, column=0, columnspan=2, sticky=tk.W, **pad
-        )
+        ttk.Label(
+            frm,
+            textvariable=self.status_var,
+            bootstyle="info",
+            font=("Segoe UI", 9),
+        ).grid(row=6, column=0, columnspan=2, sticky=tk.W, padx=10, pady=(0, 4))
 
         frm.rowconfigure(3, weight=1)
 
