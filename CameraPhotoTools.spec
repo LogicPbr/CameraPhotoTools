@@ -2,12 +2,18 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_all, collect_data_files
 
 block_cipher = None
 
 spec_dir = Path(SPEC).parent.resolve()
 datas = list(collect_data_files("ttkbootstrap"))
+try:
+    _cv_d, cv2_binaries, cv2_hi = collect_all("cv2")
+    datas.extend(_cv_d)
+except Exception:  # cv2 optional at build time — hook still pulls main.py deps when installed
+    cv2_binaries = []
+    cv2_hi = []
 icon_path = spec_dir / "assets" / "CameraPhotoTools.ico"
 icon_arg = str(icon_path) if icon_path.is_file() else None
 if icon_path.is_file():
@@ -16,9 +22,9 @@ if icon_path.is_file():
 a = Analysis(
     ["main.py"],
     pathex=[],
-    binaries=[],
+    binaries=cv2_binaries,
     datas=datas,
-    hiddenimports=["send2trash", "send2trash.win"],
+    hiddenimports=["send2trash", "send2trash.win", "numpy", "cv2", *cv2_hi],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
