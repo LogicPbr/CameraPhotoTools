@@ -1,4 +1,4 @@
-# CameraPhotoTools（AI生产）
+# CameraPhotoTools（Vibe coding）
 
 ## 相机拍摄照片后的一些处理小工具
 目前仅有windows版
@@ -12,3 +12,4 @@
 1. 查找指定目录下的jpg对应指定目录下的raw，不存在对应的raw则删除
 2. 查找指定目录下的raw对应指定目录下的jpg，不存在对应的jpg则删除
 3. 批量对目录下的jpg文件重命名
+4. 竖向拼接一组延时照片。达到时间切片的效果
