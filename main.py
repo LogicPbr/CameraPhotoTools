@@ -62,6 +62,8 @@ class App(ttk.Window):
         self.rename_find_var = tk.StringVar()
         self.rename_replace_var = tk.StringVar()
         self.stitch_dir_var = tk.StringVar()
+        self.stitch_out_dir_var = tk.StringVar()
+        self.stitch_out_name_var = tk.StringVar()
 
         self.feature_var = tk.StringVar(value="orphan_jpg")
         self.hint_var = tk.StringVar()
@@ -161,7 +163,7 @@ class App(ttk.Window):
             self.hint_var.set(
                 "对所选文件夹内的 JPG/JPEG（不递归）按文件名排序；以首张图的宽高为基准，必要时将其后各张缩放至相同尺寸。\n"
                 "第 k 张图截取横向区间 [k/n·W, (k+1)/n·W) 的整幅高度竖条（n 为文件数），再横向拼接为一张图。\n"
-                "输出文件固定为所选文件夹内的 final_image.jpg。"
+                "输出目录、文件名可留空：留空时保存为图片文件夹内的 final_image.jpg；填写时可指定其他文件夹或自定义文件名。"
             )
         else:
             self.hint_var.set(
@@ -338,6 +340,29 @@ class App(ttk.Window):
             command=lambda: browse_dir(self.stitch_dir_var),
             bootstyle="secondary-outline",
         ).grid(row=0, column=1)
+
+        ttk.Label(self.stitch_panel, text="输出目录（可选）").grid(
+            row=1, column=0, sticky=tk.NW, **pad
+        )
+        stitch_out_row = ttk.Frame(self.stitch_panel)
+        stitch_out_row.grid(row=1, column=1, sticky=tk.EW, **pad)
+        stitch_out_row.columnconfigure(0, weight=1)
+        ttk.Entry(stitch_out_row, textvariable=self.stitch_out_dir_var).grid(
+            row=0, column=0, sticky=tk.EW, padx=(0, 8)
+        )
+        ttk.Button(
+            stitch_out_row,
+            text="浏览…",
+            command=lambda: browse_dir(self.stitch_out_dir_var),
+            bootstyle="secondary-outline",
+        ).grid(row=0, column=1)
+
+        ttk.Label(self.stitch_panel, text="输出文件名（可选）").grid(
+            row=2, column=0, sticky=tk.NW, **pad
+        )
+        ttk.Entry(self.stitch_panel, textvariable=self.stitch_out_name_var).grid(
+            row=2, column=1, sticky=tk.EW, **pad
+        )
         self.stitch_panel.columnconfigure(1, weight=1)
 
         hint_lbl = ttk.Label(
@@ -460,6 +485,27 @@ class App(ttk.Window):
             return None
         return p
 
+    def _resolved_stitch_output(self, input_folder: Path) -> tuple[Path, str] | None:
+        s = self.stitch_out_dir_var.get().strip()
+        if s:
+            out_dir = Path(s)
+            if not out_dir.is_dir():
+                messagebox.showerror(
+                    "路径无效",
+                    f"输出目录不存在或不是文件夹：\n{out_dir}",
+                )
+                return None
+        else:
+            out_dir = input_folder
+        name = self.stitch_out_name_var.get().strip()
+        if not name:
+            name = "final_image.jpg"
+        else:
+            name = Path(name).name
+            if not name:
+                name = "final_image.jpg"
+        return (out_dir.resolve(), name)
+
     def _on_preview(self) -> None:
         feat = self.feature_var.get()
         self.text.delete("1.0", tk.END)
@@ -520,7 +566,16 @@ class App(ttk.Window):
             self._preview_feature = None
             self.status_var.set("就绪")
             return
-        lines, err = preview_lines(folder)
+        out = self._resolved_stitch_output(folder)
+        if not out:
+            self._preview_stitch_dir = None
+            self._preview_feature = None
+            self.status_var.set("就绪")
+            return
+        out_dir_resolved, out_name = out
+        input_resolved = folder.resolve()
+        out_dir_arg = None if out_dir_resolved == input_resolved else out_dir_resolved
+        lines, err = preview_lines(folder, out_dir_arg, out_name)
         if err:
             self._preview_stitch_dir = None
             self._preview_feature = None
@@ -656,17 +711,26 @@ class App(ttk.Window):
                 "图片文件夹与预览时不一致。请重新预览后再生成。",
             )
             return
-        out_path = folder / "final_image.jpg"
-        extra = "\n\n将覆盖已存在的 final_image.jpg。" if out_path.is_file() else ""
+        out_pair = self._resolved_stitch_output(folder)
+        if not out_pair:
+            return
+        out_dir_resolved, out_name = out_pair
+        input_resolved = folder.resolve()
+        out_path = out_dir_resolved / out_name
+        extra = f"\n\n将覆盖已存在的文件：\n{out_path}" if out_path.is_file() else ""
         if not messagebox.askyesno(
             "确认生成",
-            f"将在所选文件夹写入 final_image.jpg。{extra}\n是否继续？",
+            f"将保存为：\n{out_path}{extra}\n是否继续？",
             icon=messagebox.WARNING,
         ):
             return
         self.status_var.set("正在生成…")
         self.update_idletasks()
-        outp, err = write_final_image(folder)
+        outp, err = write_final_image(
+            folder,
+            None if out_dir_resolved == input_resolved else out_dir_resolved,
+            out_name,
+        )
         if err:
             self.status_var.set("生成失败")
             messagebox.showerror("生成失败", err)

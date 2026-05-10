@@ -68,6 +68,17 @@ def _resize_to_match(img: np.ndarray, w0: int, h0: int) -> np.ndarray:
     return cv2.resize(img, (w0, h0), interpolation=interp)
 
 
+def _resolve_output_path(
+    input_folder: Path,
+    output_dir: Path | None,
+    output_name: str | None,
+) -> Path:
+    out_dir = input_folder if output_dir is None else output_dir
+    name = ((output_name or "").strip() or "final_image.jpg")
+    name = Path(name).name or "final_image.jpg"
+    return out_dir.resolve() / name
+
+
 def build_stitched_image(folder: Path) -> tuple[np.ndarray | None, str | None]:
     paths = list_sorted_jpgs(folder)
     n = len(paths)
@@ -99,17 +110,25 @@ def build_stitched_image(folder: Path) -> tuple[np.ndarray | None, str | None]:
     return final, None
 
 
-def write_final_image(folder: Path, output_name: str = "final_image.jpg") -> tuple[Path | None, str | None]:
+def write_final_image(
+    folder: Path,
+    output_dir: Path | None = None,
+    output_name: str | None = None,
+) -> tuple[Path | None, str | None]:
     img, err = build_stitched_image(folder)
     if err or img is None:
         return None, err
-    out = folder / output_name
+    out = _resolve_output_path(folder, output_dir, output_name)
     if not _imwrite_bgr(out, img):
         return None, f"无法写入文件：\n{out}"
     return out, None
 
 
-def preview_lines(folder: Path) -> tuple[list[str], str | None]:
+def preview_lines(
+    folder: Path,
+    output_dir: Path | None = None,
+    output_name: str | None = None,
+) -> tuple[list[str], str | None]:
     paths = list_sorted_jpgs(folder)
     if not paths:
         return [], "文件夹内没有 JPG/JPEG 文件。"
@@ -121,5 +140,5 @@ def preview_lines(folder: Path) -> tuple[list[str], str | None]:
     for p in paths:
         lines.append(p.name)
     lines.append("")
-    lines.append(f"输出文件将保存为：{folder.resolve() / 'final_image.jpg'}")
+    lines.append(f"输出文件将保存为：{_resolve_output_path(folder, output_dir, output_name)}")
     return lines, None
