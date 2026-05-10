@@ -45,13 +45,28 @@ def _load_jpg_slice_concat() -> tuple[object, object] | tuple[None, str]:
         )
 
 
+def _load_jpg_radial_slice_concat() -> tuple[object, object] | tuple[None, str]:
+    """Same dependency set as 竖条拼接; separate module for radial sectors."""
+    try:
+        from jpg_radial_slice_concat import preview_lines, write_final_image
+
+        return preview_lines, write_final_image
+    except ImportError as exc:
+        return None, (
+            "「JPG 扇形径向拼接」需要安装 OpenCV 与 NumPy。\n\n"
+            "在项目目录打开命令行执行：\n"
+            "  pip install opencv-python-headless\n\n"
+            f"{exc}"
+        )
+
+
 class App(ttk.Window):
     def __init__(self) -> None:
         super().__init__(
             title="Camera Photo Tools",
             themename="morph",
-            minsize=(760, 580),
-            size=(900, 620),
+            minsize=(840, 640),
+            size=(1040, 720),
             iconphoto=None,
         )
         self._set_window_icon()
@@ -64,6 +79,7 @@ class App(ttk.Window):
         self.stitch_dir_var = tk.StringVar()
         self.stitch_out_dir_var = tk.StringVar()
         self.stitch_out_name_var = tk.StringVar()
+        self.stitch_radial_start_deg_var = tk.StringVar(value="0")
 
         self.feature_var = tk.StringVar(value="orphan_jpg")
         self.hint_var = tk.StringVar()
@@ -77,6 +93,7 @@ class App(ttk.Window):
         self._preview_rename_pattern: str | None = None
         self._preview_rename_repl: str | None = None
         self._preview_stitch_dir: Path | None = None
+        self._preview_radial_start_s: str | None = None
 
         self._build_ui()
         self._update_hint()
@@ -102,6 +119,7 @@ class App(ttk.Window):
         self._preview_rename_pattern = None
         self._preview_rename_repl = None
         self._preview_stitch_dir = None
+        self._preview_radial_start_s = None
         self.text.delete("1.0", tk.END)
         self._update_hint()
         self._sync_feature_panels()
@@ -133,6 +151,14 @@ class App(ttk.Window):
             self.pair_panel.pack_forget()
             self.rename_panel.pack_forget()
             self.stitch_panel.pack(fill=tk.X)
+            self.stitch_radial_opts.grid_remove()
+            self.btn_preview.configure(text="预览列表")
+            self.btn_action.configure(text="生成拼接图")
+        elif f == "jpg_radial_slice_concat":
+            self.pair_panel.pack_forget()
+            self.rename_panel.pack_forget()
+            self.stitch_panel.pack(fill=tk.X)
+            self.stitch_radial_opts.grid(row=3, column=0, columnspan=2, sticky=tk.EW, padx=10, pady=6)
             self.btn_preview.configure(text="预览列表")
             self.btn_action.configure(text="生成拼接图")
         else:
@@ -161,9 +187,16 @@ class App(ttk.Window):
             )
         elif f == "jpg_slice_concat":
             self.hint_var.set(
-                "对所选文件夹内的 JPG/JPEG（不递归）按文件名排序；以首张图的宽高为基准，必要时将其后各张缩放至相同尺寸。\n"
+                "对所选文件夹内的 JPG/JPEG（不递归）按文件名自然排序；以首张图的宽高为基准，必要时将其后各张缩放至相同尺寸。\n"
                 "第 k 张图截取横向区间 [k/n·W, (k+1)/n·W) 的整幅高度竖条（n 为文件数），再横向拼接为一张图。\n"
                 "输出目录、文件名可留空：留空时保存为图片文件夹内的 final_image.jpg；填写时可指定其他文件夹或自定义文件名。"
+            )
+        elif f == "jpg_radial_slice_concat":
+            self.hint_var.set(
+                "与「竖条横向拼接」相同的输入与输出路径规则：同一文件夹内 JPG（不递归）、按文件名自然排序、对齐首张尺寸。\n"
+                "区别：圆心固定为首张对齐后的对角线中心（几何中心），按方位角等分 360°；第 k 张负责角度区间 "
+                "[起始角+k·360°/n, 起始角+(k+1)·360°/n)，每像素从对应原图同坐标取色。\n"
+                "起始角单位为度：正上为 0°，顺时针递增（右 90°）；默认 0° 即从画面上缘方向起始铺扇区。"
             )
         else:
             self.hint_var.set(
@@ -257,6 +290,21 @@ class App(ttk.Window):
         ttk.Label(
             sidebar,
             text="多图各取一竖条拼成一张图（不递归）",
+            wraplength=188,
+            justify=tk.LEFT,
+            font=("Segoe UI", 8),
+            bootstyle="secondary",
+        ).pack(anchor=tk.W, pady=(0, 14))
+        ttk.Radiobutton(
+            sidebar,
+            text="JPG 扇形径向拼接",
+            variable=self.feature_var,
+            value="jpg_radial_slice_concat",
+            bootstyle="success-toolbutton",
+        ).pack(anchor=tk.W, pady=(0, 6), fill=tk.X)
+        ttk.Label(
+            sidebar,
+            text="按圆心角分区，每图一块扇形（时间辐射效果，不递归）",
             wraplength=188,
             justify=tk.LEFT,
             font=("Segoe UI", 8),
@@ -365,10 +413,27 @@ class App(ttk.Window):
         )
         self.stitch_panel.columnconfigure(1, weight=1)
 
+        self.stitch_radial_opts = ttk.Labelframe(
+            self.stitch_panel,
+            text="径向拼接（圆心固定为对角线中心）",
+            padding=(8, 8),
+            bootstyle="secondary",
+        )
+        self.stitch_radial_opts.columnconfigure(1, weight=1)
+        rp = {"padx": 6, "pady": 4}
+        ttk.Label(self.stitch_radial_opts, text="起始角（度）").grid(
+            row=0, column=0, sticky=tk.NW, **rp
+        )
+        ttk.Entry(self.stitch_radial_opts, textvariable=self.stitch_radial_start_deg_var).grid(
+            row=0, column=1, sticky=tk.EW, **rp
+        )
+        self.stitch_radial_opts.grid(row=3, column=0, columnspan=2, sticky=tk.EW, **pad)
+        self.stitch_radial_opts.grid_remove()
+
         hint_lbl = ttk.Label(
             frm,
             textvariable=self.hint_var,
-            wraplength=560,
+            wraplength=680,
             justify=tk.LEFT,
             bootstyle="secondary",
         )
@@ -506,6 +571,18 @@ class App(ttk.Window):
                 name = "final_image.jpg"
         return (out_dir.resolve(), name)
 
+    def _parse_radial_start_angle(self) -> tuple[float, str | None]:
+        ss = self.stitch_radial_start_deg_var.get().strip()
+        if not ss:
+            return 0.0, None
+        try:
+            return float(ss), None
+        except ValueError:
+            return 0.0, "起始角须为数字（度）。"
+
+    def _radial_start_ui_snapshot(self) -> str:
+        return self.stitch_radial_start_deg_var.get().strip()
+
     def _on_preview(self) -> None:
         feat = self.feature_var.get()
         self.text.delete("1.0", tk.END)
@@ -516,6 +593,10 @@ class App(ttk.Window):
 
         if feat == "jpg_slice_concat":
             self._preview_slice_concat()
+            return
+
+        if feat == "jpg_radial_slice_concat":
+            self._preview_radial_slice_concat()
             return
 
         roots = self._resolved_roots()
@@ -564,12 +645,14 @@ class App(ttk.Window):
         if not folder:
             self._preview_stitch_dir = None
             self._preview_feature = None
+            self._preview_radial_start_s = None
             self.status_var.set("就绪")
             return
         out = self._resolved_stitch_output(folder)
         if not out:
             self._preview_stitch_dir = None
             self._preview_feature = None
+            self._preview_radial_start_s = None
             self.status_var.set("就绪")
             return
         out_dir_resolved, out_name = out
@@ -579,6 +662,7 @@ class App(ttk.Window):
         if err:
             self._preview_stitch_dir = None
             self._preview_feature = None
+            self._preview_radial_start_s = None
             messagebox.showwarning("预览", err)
             self.status_var.set("预览失败")
             return
@@ -586,6 +670,60 @@ class App(ttk.Window):
             self.text.insert(tk.END, line + "\n")
         self._preview_stitch_dir = folder.resolve()
         self._preview_feature = "jpg_slice_concat"
+        self._preview_radial_start_s = None
+        self.status_var.set("预览完成，可点击「生成拼接图」。")
+
+    def _preview_radial_slice_concat(self) -> None:
+        got = _load_jpg_radial_slice_concat()
+        if got[0] is None:
+            messagebox.showerror("缺少依赖", got[1])
+            self.status_var.set("就绪")
+            return
+        preview_lines_fn = got[0]
+        folder = self._resolved_stitch_folder()
+        if not folder:
+            self._preview_stitch_dir = None
+            self._preview_feature = None
+            self._preview_radial_start_s = None
+            self.status_var.set("就绪")
+            return
+        out = self._resolved_stitch_output(folder)
+        if not out:
+            self._preview_stitch_dir = None
+            self._preview_feature = None
+            self._preview_radial_start_s = None
+            self.status_var.set("就绪")
+            return
+        start_deg, perr = self._parse_radial_start_angle()
+        if perr:
+            self._preview_stitch_dir = None
+            self._preview_feature = None
+            self._preview_radial_start_s = None
+            messagebox.showwarning("参数错误", perr)
+            self.status_var.set("预览失败")
+            return
+        out_dir_resolved, out_name = out
+        input_resolved = folder.resolve()
+        out_dir_arg = None if out_dir_resolved == input_resolved else out_dir_resolved
+        lines, err = preview_lines_fn(
+            folder,
+            out_dir_arg,
+            out_name,
+            start_angle_deg=start_deg,
+        )
+        if err:
+            self._preview_stitch_dir = None
+            self._preview_feature = None
+            self._preview_radial_start_s = None
+            messagebox.showwarning("预览", err)
+            self.status_var.set("预览失败")
+            return
+        st_s = self._radial_start_ui_snapshot()
+        for line in lines:
+            self.text.insert(tk.END, line + "\n")
+        self._preview_stitch_dir = folder.resolve()
+        self._preview_feature = "jpg_radial_slice_concat"
+        self._preview_radial_start_s = st_s
         self.status_var.set("预览完成，可点击「生成拼接图」。")
 
     def _preview_rename(self) -> None:
@@ -641,6 +779,8 @@ class App(ttk.Window):
             self._apply_rename()
         elif feat == "jpg_slice_concat":
             self._apply_slice_concat()
+        elif feat == "jpg_radial_slice_concat":
+            self._apply_radial_slice_concat()
         else:
             self._on_delete()
 
@@ -737,6 +877,72 @@ class App(ttk.Window):
             return
         self._preview_stitch_dir = None
         self._preview_feature = None
+        self._preview_radial_start_s = None
+        self.text.delete("1.0", tk.END)
+        self.status_var.set(f"已写入 {outp}")
+        messagebox.showinfo("完成", f"已保存：\n{outp}")
+
+    def _apply_radial_slice_concat(self) -> None:
+        got = _load_jpg_radial_slice_concat()
+        if got[0] is None:
+            messagebox.showerror("缺少依赖", got[1])
+            return
+        write_final_image = got[1]
+        folder = self._resolved_stitch_folder()
+        if not folder:
+            return
+        if (
+            self._preview_stitch_dir is None
+            or self._preview_feature != "jpg_radial_slice_concat"
+            or self._preview_radial_start_s is None
+        ):
+            messagebox.showinfo("提示", "请先点击「预览列表」后再生成。")
+            return
+        if folder.resolve() != self._preview_stitch_dir:
+            messagebox.showwarning(
+                "目录已变更",
+                "图片文件夹与预览时不一致。请重新预览后再生成。",
+            )
+            return
+        st_s = self._radial_start_ui_snapshot()
+        if st_s != self._preview_radial_start_s:
+            messagebox.showwarning(
+                "参数已变更",
+                "起始角与预览时不一致。请重新预览后再生成。",
+            )
+            return
+        start_deg, perr = self._parse_radial_start_angle()
+        if perr:
+            messagebox.showwarning("参数错误", perr)
+            return
+        out_pair = self._resolved_stitch_output(folder)
+        if not out_pair:
+            return
+        out_dir_resolved, out_name = out_pair
+        input_resolved = folder.resolve()
+        out_path = out_dir_resolved / out_name
+        extra = f"\n\n将覆盖已存在的文件：\n{out_path}" if out_path.is_file() else ""
+        if not messagebox.askyesno(
+            "确认生成",
+            f"将保存为：\n{out_path}{extra}\n是否继续？",
+            icon=messagebox.WARNING,
+        ):
+            return
+        self.status_var.set("正在生成…")
+        self.update_idletasks()
+        outp, err = write_final_image(
+            folder,
+            None if out_dir_resolved == input_resolved else out_dir_resolved,
+            out_name,
+            start_angle_deg=start_deg,
+        )
+        if err:
+            self.status_var.set("生成失败")
+            messagebox.showerror("生成失败", err)
+            return
+        self._preview_stitch_dir = None
+        self._preview_feature = None
+        self._preview_radial_start_s = None
         self.text.delete("1.0", tk.END)
         self.status_var.set(f"已写入 {outp}")
         messagebox.showinfo("完成", f"已保存：\n{outp}")

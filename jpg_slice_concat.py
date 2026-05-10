@@ -1,10 +1,11 @@
 """
-For each JPG in a folder (non-recursive, sorted by name): take one vertical slice
+For each JPG in a folder (non-recursive, natural-sorted filename): take one vertical slice
 whose width is 1/n of the reference width, then concatenate slices left-to-right.
 Matches the user's OpenCV workflow; supports Unicode paths on Windows via imdecode/imencode.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import cv2
@@ -12,6 +13,20 @@ import numpy as np
 
 # JPEG output: OpenCV's default quality is visibly lossy — use highest practical setting here.
 _JPEG_WRITE_QUALITY = 100  # 1–100; 100 minimizes subsampling/block artifacts (still JPEG, larger files)
+
+
+def _natural_sort_key(filename: str) -> tuple[int | str, ...]:
+    """Filename order friendly to bursts (IMG_9 before IMG_10)."""
+
+    parts: list[int | str] = []
+    for t in re.split(r"(\d+)", filename):
+        if t == "":
+            continue
+        if t.isdigit():
+            parts.append(int(t))
+        else:
+            parts.append(t.casefold())
+    return tuple(parts)
 
 
 def list_sorted_jpgs(folder: Path) -> list[Path]:
@@ -25,7 +40,7 @@ def list_sorted_jpgs(folder: Path) -> list[Path]:
             out.append(p)
     except OSError:
         return []
-    out.sort(key=lambda x: x.name.lower())
+    out.sort(key=lambda p: _natural_sort_key(p.name))
     return out
 
 
@@ -133,7 +148,7 @@ def preview_lines(
     if not paths:
         return [], "文件夹内没有 JPG/JPEG 文件。"
     lines = [
-        f"共 {len(paths)} 个文件（按文件名排序，仅当前文件夹）：",
+        f"共 {len(paths)} 个文件（文件名自然排序，仅当前文件夹）：",
         f"JPEG 输出质量系数：{_JPEG_WRITE_QUALITY}/100（仅影响保存，缩放见插值算法）。",
         "",
     ]
